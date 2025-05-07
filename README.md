@@ -1,2 +1,0 @@
-# WebXR
-webxr demo01
