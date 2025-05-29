@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>WebXR con Three.js</title>
+  <script src="https://unpkg.com/three@0.126.0/build/three.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #000;
+    }
+    button {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 24px;
+      background: #4285f4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <button onclick="activateXR()">Iniciar Realidad Aumentada</button>
+  <script>
+    async function activateXR() {
+      // Crear canvas y obtener contexto WebGL
+      const canvas = document.createElement("canvas");
+      document.body.appendChild(canvas);
+      const gl = canvas.getContext("webgl", {xrCompatible: true});
+      
+      // Verificar compatibilidad con WebXR
+      if (!navigator.xr) {
+        alert("Tu navegador no soporta WebXR");
+        return;
+      }
+
+      // Inicializar Three.js
+      const scene = new THREE.Scene();
+      
+      // Crear cubo con diferentes colores en cada cara
+      const materials = [
+        new THREE.MeshBasicMaterial({color: 0xff0000}),  // rojo
+        new THREE.MeshBasicMaterial({color: 0x0000ff}),  // azul
+        new THREE.MeshBasicMaterial({color: 0x00ff00}),  // verde
+        new THREE.MeshBasicMaterial({color: 0xff00ff}),  // magenta
+        new THREE.MeshBasicMaterial({color: 0x00ffff}),  // cyan
+        new THREE.MeshBasicMaterial({color: 0xffff00})   // amarillo
+      ];
+      
+      const cube = new THREE.Mesh(
+        new THREE.BoxBufferGeometry(0.2, 0.2, 0.2),
+        materials
+      );
+      cube.position.set(0, 0, -0.5);  // Posicionar el cubo frente a la cámara
+      scene.add(cube);
+      
+      // Configurar renderizador Three.js
+      const renderer = new THREE.WebGLRenderer({
+        alpha: true,
+        preserveDrawingBuffer: true,
+        canvas: canvas,
+        context: gl
+      });
+      renderer.autoClear = false;
+      
+      // Configurar cámara
+      const camera = new THREE.PerspectiveCamera();
+      camera.matrixAutoUpdate = false;
+
+      try {
+        // Iniciar sesión de WebXR
+        const session = await navigator.xr.requestSession("immersive-ar");
+        
+        // Configurar capa de renderizado
+        await session.updateRenderState({
+          baseLayer: new XRWebGLLayer(session, gl)
+        });
+        
+        // Obtener espacio de referencia
+        const referenceSpace = await session.requestReferenceSpace('local');
+        
+        // Eliminar el botón después de iniciar
+        document.querySelector('button').remove();
+        
+        // Bucle de renderizado
+        const onXRFrame = (time, frame) => {
+          // Programar el siguiente frame
+          session.requestAnimationFrame(onXRFrame);
+          
+          // Enlazar el framebuffer
+          gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer);
+          
+          // Obtener la pose del dispositivo
+          const pose = frame.getViewerPose(referenceSpace);
+          if (pose) {
+            // En AR móvil normalmente solo tenemos una vista
+            const view = pose.views[0];
+            
+            // Configurar viewport
+            const viewport = session.renderState.baseLayer.getViewport(view);
+            renderer.setSize(viewport.width, viewport.height);
+            
+            // Actualizar cámara con los datos de WebXR
+            camera.matrix.fromArray(view.transform.matrix);
+            camera.projectionMatrix.fromArray(view.projectionMatrix);
+            camera.updateMatrixWorld(true);
+            
+            // Renderizar escena
+            renderer.render(scene, camera);
+          }
+        };
+        
+        // Iniciar el bucle de renderizado
+        session.requestAnimationFrame(onXRFrame);
+        
+      } catch (error) {
+        console.error("Error al iniciar WebXR:", error);
+        alert("No se pudo iniciar la experiencia AR: " + error.message);
+      }
+    }
+  </script>
+</body>
+</html>
