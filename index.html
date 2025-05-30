@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR con Tu Modelo</title>
+    <script src="https://unpkg.com/three@0.126.0/build/three.js"></script>
+    <script src="https://unpkg.com/three@0.126.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+
+<body>
+    <button onclick="initAR()">Iniciar AR con tu Modelo</button>
+
+    <script>
+        async function initAR() {
+            const canvas = document.createElement("canvas");
+            document.body.appendChild(canvas);
+            const gl = canvas.getContext("webgl", { xrCompatible: true });
+
+            // Escena
+            const scene = new THREE.Scene();
+            const light = new THREE.AmbientLight(0xffffff, 1);
+            scene.add(light);
+
+            // Renderer
+            const renderer = new THREE.WebGLRenderer({ canvas, context: gl, alpha: true });
+            renderer.autoClear = false;
+
+            // Cámara
+            const camera = new THREE.PerspectiveCamera();
+            camera.matrixAutoUpdate = false;
+
+            // Session XR
+            const session = await navigator.xr.requestSession("immersive-ar", {
+                requiredFeatures: ['hit-test']
+            });
+            session.updateRenderState({
+                baseLayer: new XRWebGLLayer(session, gl)
+            });
+
+            // Hit Test
+            const refSpace = await session.requestReferenceSpace('local');
+            const viewerSpace = await session.requestReferenceSpace('viewer');
+            const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+
+            // Cargar modelos LOCALES
+            const loader = new THREE.GLTFLoader();
+
+            let reticle;
+            loader.load("https://immersive-web.github.io/webxr-samples/media/gltf/reticle/reticle.gltf", function (gltf) {
+                reticle = gltf.scene;
+                reticle.visible = false;
+                scene.add(reticle);
+            });
+            let panderoModel;
+            loader.load("./assets/modelos/malla02pandero.gltf", (gltf) => {
+                panderoModel = gltf.scene;
+                // Opcional: Ajustar escala si es necesario
+                panderoModel.scale.set(0.5, 0.5, 0.5); // Escala al 50%
+            }, undefined, (e) => console.error("Error cargando pandero:", e));
+
+            // Interacción
+            session.addEventListener("select", () => {
+                if (panderoModel && reticle?.visible) {
+                    const clone = panderoModel.clone();
+                    clone.position.copy(reticle.position);
+
+                    // Opcional: Rotación inicial si es necesario
+                    clone.rotation.y = Math.PI / 2; // 90 grados en eje Y
+
+                    scene.add(clone);
+                }
+            });
+
+            // Render Loop
+            const onXRFrame = (time, frame) => {
+                session.requestAnimationFrame(onXRFrame);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer);
+
+                const pose = frame.getViewerPose(refSpace);
+                if (pose) {
+                    const view = pose.views[0];
+                    renderer.setSize(
+                        session.renderState.baseLayer.getViewport(view).width,
+                        session.renderState.baseLayer.getViewport(view).height
+                    );
+
+                    camera.matrix.fromArray(view.transform.matrix);
+                    camera.projectionMatrix.fromArray(view.projectionMatrix);
+                    camera.updateMatrixWorld(true);
+
+                    // Hit Test
+                    const hits = frame.getHitTestResults(hitTestSource);
+                    if (hits.length > 0 && reticle) {
+                        const hitPose = hits[0].getPose(refSpace);
+                        reticle.visible = true;
+                        reticle.position.set(
+                            hitPose.transform.position.x,
+                            hitPose.transform.position.y,
+                            hitPose.transform.position.z
+                        );
+                        reticle.updateMatrixWorld(true);
+                    } else if (reticle) {
+                        reticle.visible = false;
+                    }
+
+                    renderer.render(scene, camera);
+                }
+            };
+            session.requestAnimationFrame(onXRFrame);
+        }
+    </script>
+</body>
+
+</html>
